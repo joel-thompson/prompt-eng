@@ -19,16 +19,27 @@ Build a minimal but practical tool for learning prompt engineering through delib
 ### What You'll Skip (Until Proven Necessary)
 - Streaming responses
 - Multiple models  
-- Beautiful UI
+- Beautiful UI (well, shadcn makes it beautiful by default!)
 - Response extraction
 - Complex variables
 - Test suites
 
-## Setup Phase (10 minutes)
+## Setup Phase (15 minutes)
 
 ### Install Dependencies
 ```bash
+# Core dependencies
 pnpm add ai openai
+
+# Install shadcn components we'll use
+pnpm dlx shadcn@latest add button
+pnpm dlx shadcn@latest add textarea
+pnpm dlx shadcn@latest add card
+pnpm dlx shadcn@latest add badge
+pnpm dlx shadcn@latest add alert
+pnpm dlx shadcn@latest add scroll-area
+pnpm dlx shadcn@latest add separator
+pnpm dlx shadcn@latest add tabs
 ```
 
 ### Environment Setup
@@ -131,6 +142,15 @@ Create `src/app/(authenticated)/prompt/page.tsx`:
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Copy, Loader2, AlertCircle, Clock, DollarSign } from 'lucide-react';
 
 // Types
 interface HistoryItem {
@@ -178,7 +198,6 @@ export default function PromptPage() {
   const [error, setError] = useState('');
   const [usage, setUsage] = useState<any>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load history on mount
@@ -248,7 +267,6 @@ export default function PromptPage() {
       totalTokens: item.tokens,
       estimatedCost: item.cost
     });
-    setShowHistory(false);
   };
 
   const loadTemplate = (template: Template) => {
@@ -276,118 +294,170 @@ export default function PromptPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Prompt Engineering Tool</h1>
-        <button
-          onClick={() => setShowHistory(!showHistory)}
-          className="text-sm text-blue-600 hover:text-blue-800"
-        >
-          {showHistory ? 'Hide' : 'Show'} History ({history.length})
-        </button>
-      </div>
+    <div className="max-w-6xl mx-auto p-6 space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Prompt Engineering Tool</CardTitle>
+          <CardDescription>
+            Practice and refine your prompts with instant feedback
+          </CardDescription>
+        </CardHeader>
+      </Card>
 
-      {/* Templates */}
-      <div className="mb-4">
-        <p className="text-sm text-gray-600 mb-2">Quick templates:</p>
-        <div className="flex flex-wrap gap-2">
-          {TEMPLATES.map((template) => (
-            <button
-              key={template.name}
-              onClick={() => loadTemplate(template)}
-              className="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded"
-            >
-              {template.name}
-            </button>
-          ))}
-        </div>
-      </div>
+      <Tabs defaultValue="prompt" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="prompt">Prompt</TabsTrigger>
+          <TabsTrigger value="history">History ({history.length})</TabsTrigger>
+        </TabsList>
 
-      {/* History Panel */}
-      {showHistory && (
-        <div className="mb-4 p-4 bg-gray-50 rounded-lg max-h-60 overflow-y-auto">
-          <h3 className="font-semibold mb-2">Recent Prompts</h3>
-          {history.length === 0 ? (
-            <p className="text-sm text-gray-500">No history yet</p>
-          ) : (
-            <div className="space-y-2">
-              {history.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => loadFromHistory(item)}
-                  className="p-2 bg-white rounded cursor-pointer hover:bg-gray-50"
+        <TabsContent value="prompt" className="space-y-4">
+          {/* Templates */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Quick Templates</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {TEMPLATES.map((template) => (
+                  <Button
+                    key={template.name}
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => loadTemplate(template)}
+                  >
+                    {template.name}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Main Input */}
+          <Card>
+            <CardContent className="pt-6">
+              <Textarea
+                ref={textareaRef}
+                className="min-h-[200px] font-mono text-sm"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Enter your prompt here... (Cmd/Ctrl + Enter to submit)"
+                disabled={loading}
+              />
+              
+              <div className="mt-4 flex gap-2">
+                <Button
+                  onClick={submit}
+                  disabled={loading || !prompt.trim()}
                 >
-                  <p className="text-sm font-mono truncate">{item.prompt}</p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(item.timestamp).toLocaleString()} • 
-                    {item.tokens} tokens • ${item.cost.toFixed(4)}
-                  </p>
-                </div>
-              ))}
-            </div>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {loading ? 'Thinking...' : 'Submit (⌘↵)'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={clearAll}
+                >
+                  Clear
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Error Display */}
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-        </div>
-      )}
 
-      {/* Main Input */}
-      <textarea
-        ref={textareaRef}
-        className="w-full h-40 p-4 border rounded-lg font-mono text-sm"
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Enter your prompt here... (Cmd/Ctrl + Enter to submit)"
-        disabled={loading}
-      />
-      
-      {/* Actions */}
-      <div className="mt-4 flex gap-2">
-        <button
-          onClick={submit}
-          disabled={loading || !prompt.trim()}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
-        >
-          {loading ? 'Thinking...' : 'Submit (⌘↵)'}
-        </button>
-        <button
-          onClick={clearAll}
-          className="px-4 py-2 text-gray-600 hover:text-gray-800"
-        >
-          Clear
-        </button>
-      </div>
+          {/* Response */}
+          {response && (
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <CardTitle className="text-base">Response</CardTitle>
+                  <div className="flex items-center gap-2">
+                    {usage && (
+                      <>
+                        <Badge variant="secondary" className="gap-1">
+                          <Clock className="h-3 w-3" />
+                          {usage.totalTokens} tokens
+                        </Badge>
+                        <Badge variant="secondary" className="gap-1">
+                          <DollarSign className="h-3 w-3" />
+                          ${usage.estimatedCost.toFixed(4)}
+                        </Badge>
+                      </>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => copyToClipboard(response)}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[400px] w-full rounded-md border p-4">
+                  <pre className="whitespace-pre-wrap font-mono text-sm">
+                    {response}
+                  </pre>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
-      {/* Error Display */}
-      {error && (
-        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-red-700">{error}</p>
-        </div>
-      )}
-
-      {/* Response */}
-      {response && (
-        <div className="mt-6">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold">Response</h2>
-            <div className="flex items-center gap-4">
-              {usage && (
-                <span className="text-sm text-gray-500">
-                  {usage.totalTokens} tokens • ${usage.estimatedCost.toFixed(4)}
-                </span>
+        <TabsContent value="history">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Prompt History</CardTitle>
+              <CardDescription>
+                Click any item to load it
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {history.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No history yet. Start by submitting a prompt!
+                </p>
+              ) : (
+                <ScrollArea className="h-[600px] pr-4">
+                  <div className="space-y-4">
+                    {history.map((item, index) => (
+                      <div key={item.id}>
+                        <Card
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => loadFromHistory(item)}
+                        >
+                          <CardContent className="pt-4">
+                            <p className="font-mono text-sm line-clamp-2 mb-2">
+                              {item.prompt}
+                            </p>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span>{new Date(item.timestamp).toLocaleString()}</span>
+                              <Badge variant="outline" className="text-xs">
+                                {item.tokens} tokens
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                ${item.cost.toFixed(4)}
+                              </Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        {index < history.length - 1 && <Separator className="my-2" />}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               )}
-              <button
-                onClick={() => copyToClipboard(response)}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                Copy
-              </button>
-            </div>
-          </div>
-          <pre className="w-full p-4 bg-gray-50 border rounded-lg whitespace-pre-wrap font-mono text-sm">
-            {response}
-          </pre>
-        </div>
-      )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -403,6 +473,8 @@ export default function PromptPage() {
    - History save/load
    - Error handling (try a massive prompt)
    - Keyboard shortcut
+   - Tab switching
+   - Copy functionality
 
 ## Learning Curriculum: 30 Days of Prompt Engineering
 
