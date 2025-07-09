@@ -11,6 +11,8 @@ This project uses the following:
 - shadcn for component library
 - TanStack Query (react-query)
 
+I use .env for my local dev environment variables
+
 Always use pnpm as my package manager when adding/updating/removing packages
 
 When adding new components, use shadcn when possible

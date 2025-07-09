@@ -7,39 +7,39 @@ This plan outlines building a personal prompt engineering tool using your existi
 ## Core Features
 
 1. **Prompt Management**: Create and edit prompt templates with variables
-2. **LLM Integration**: Send prompts to OpenAI GPT models
-3. **Response Review**: Display raw and extracted outputs
-4. **Quick Iteration**: Easy editing and re-running of prompts
+2. **LLM Integration**: Send prompts to OpenAI GPT models with streaming support
+3. **Response Review**: Display responses with multiple format options
+4. **Prompt History**: Track and reuse previous prompts
+5. **Cost Tracking**: Monitor token usage and API costs
+6. **Quick Iteration**: Easy editing and re-running of prompts
 
-## shadcn/ui Components Used
+## Implementation Phases
 
-This implementation makes extensive use of shadcn/ui components for better UX:
-- **Alert**: For error messages instead of basic styling
-- **Button**: For consistent button styling and states
-- **Card**: For better content organization
-- **Skeleton**: For loading states instead of just text
-- **ScrollArea**: For better scrolling of long responses
-- **Separator**: For visual section dividers
-- **Toast**: For better notifications instead of browser alerts
-- **Textarea**: For multi-line input with proper styling
-- **Input/Label**: For form inputs with proper accessibility
-- **Tabs**: For organizing raw vs extracted responses
-- **Select**: For model selection dropdown
-- **Badge**: For status indicators and labels
+### Phase 1: Core Loop (1-2 hours)
+- Simple textarea → API → streaming response display
+- Just one model (gpt-3.5-turbo)
+- No variables, no extraction
+- Basic keyboard shortcuts (Cmd/Ctrl + Enter)
 
-## API Integration Strategy
+### Phase 2: Essential Features (2-3 hours)
+- Add prompt history with localStorage
+- Add variable substitution with `{{VARIABLE}}` syntax
+- Add "Run Again" and "Fork Prompt" features
+- Token counting and cost tracking
 
-This implementation uses a custom hook approach optimized for LLM interactions:
-- **Custom Hook**: Simple `useLLMCall` hook for LLM-specific needs
-- **No Caching**: LLM responses are unique and shouldn't be cached
-- **Longer Timeouts**: Accounts for LLM response times (10-30 seconds)
-- **No Automatic Retries**: Prevents costly repeated API calls
-- **Toast Notifications**: User feedback without duplicate error displays
-- **Request Deduplication**: Prevents multiple simultaneous requests
+### Phase 3: Power Features (2-3 hours)
+- Model selection (GPT-3.5, GPT-4, etc.)
+- Response extraction (regex, JSON path, LLM-based)
+- Side-by-side prompt comparison
+- Response format handling (JSON, Markdown, code)
 
-## Step-by-Step Implementation
+### Phase 4: Polish (optional)
+- Prompt library with categories
+- Import/export functionality
+- Test suite functionality
+- Prompt chaining
 
-### Prerequisites Check
+## Prerequisites Check
 
 Before starting, verify these are working in your project:
 
@@ -47,86 +47,86 @@ Before starting, verify these are working in your project:
 2. **Authentication**: Ensure you can access routes under `(authenticated)/`
 3. **shadcn**: Verify shadcn components are working by importing a basic component like `Button`
 
-### Step 1: Environment Setup & API Route
+## Phase 1: Core Loop Implementation
 
-#### 1.1 Install Dependencies
+### Step 1.1: Environment Setup
+
+#### Install Dependencies
 ```bash
-pnpm add ai
+pnpm add ai openai
 ```
 
-#### 1.2 Environment Variables
+#### Environment Variables
 Create `.env`:
 ```
 OPENAI_API_KEY=your_api_key_here
 ```
 
-Update `src/env.ts` to validate the API key:
+Create `.env.example`:
+```
+OPENAI_API_KEY=sk-proj-EXAMPLE_KEY_REPLACE_WITH_YOUR_OWN
+```
+
+Update `src/env.ts`:
 ```typescript
 // Add to your environment validation
 OPENAI_API_KEY: z.string().min(1, 'OpenAI API key is required'),
 ```
 
-#### 1.3 Create Basic API Route
+### Step 1.2: Create Streaming API Route
+
 Create `src/app/api/llm/route.ts`:
 ```typescript
 import { openai } from '@ai-sdk/openai';
-import { generateText } from 'ai';
-import { NextRequest, NextResponse } from 'next/server';
+import { streamText } from 'ai';
+import { NextRequest } from 'next/server';
+
+// Allow streaming responses
+export const runtime = 'edge';
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt } = await request.json();
+    const { prompt, model = 'gpt-3.5-turbo' } = await request.json();
     
     if (!prompt || typeof prompt !== 'string') {
-      return NextResponse.json({ error: 'Invalid prompt' }, { status: 400 });
+      return new Response('Invalid prompt', { status: 400 });
     }
     
-    const { text } = await generateText({
-      model: openai('gpt-3.5-turbo'),
+    // Count tokens (rough estimate)
+    const promptTokens = Math.ceil(prompt.length / 4);
+    
+    const result = await streamText({
+      model: openai(model),
       prompt,
       temperature: 0.7,
     });
     
-    return NextResponse.json({ response: text });
+    // Return streaming response with custom headers for token info
+    return result.toAIStreamResponse({
+      headers: {
+        'X-Prompt-Tokens': promptTokens.toString(),
+        'X-Model': model,
+      }
+    });
   } catch (error) {
     console.error('LLM API error:', error);
-    return NextResponse.json(
-      { error: 'Failed to process request' },
-      { status: 500 }
-    );
+    return new Response('Failed to process request', { status: 500 });
   }
 }
 ```
 
-#### 1.4 Test the API Route
-Test your API route before building UI:
+### Step 1.3: Create Minimal UI with Streaming
 
+Add essential shadcn components:
 ```bash
-# Test with curl
-curl -X POST http://localhost:3000/api/llm \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Say hello"}'
+pnpm dlx shadcn@latest add button textarea
+pnpm dlx shadcn@latest add toaster
 ```
 
-**Expected Response**: `{"response": "Hello! How can I help you today?"}`
-
-**If it fails**: Check your OpenAI API key and ensure the server is running.
-
-### Step 2: Create Minimal Working UI
-
-#### 2.1 Add Basic shadcn Components
-```bash
-pnpm dlx shadcn@latest add button
-pnpm dlx shadcn@latest add textarea
-pnpm dlx shadcn@latest add alert
-```
-
-Note: The `toast` component requires adding the `<Toaster />` component to your layout. Add this to your `app/layout.tsx`:
-
+Add Toaster to your layout (`app/layout.tsx`):
 ```tsx
 import { Toaster } from '@/components/ui/toaster';
 
-// Add <Toaster /> before the closing </body> tag
 export default function RootLayout({
   children,
 }: {
@@ -143,57 +143,59 @@ export default function RootLayout({
 }
 ```
 
-Test each component after adding:
+Create `src/app/(authenticated)/prompt-engineering/page.tsx`:
 ```typescript
-// Create a test component to verify components work
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-
-export function TestComponents() {
-  return (
-    <div>
-      <Textarea placeholder="Test textarea" />
-      <Button>Test button</Button>
-    </div>
-  );
-}
-```
-
-#### 2.2 Create Custom Hook for LLM Calls
-First, create `src/hooks/useLLMCall.ts`:
-```typescript
-import { useState, useRef } from 'react';
+import { useChat } from 'ai/react';
 import { useToast } from '@/components/ui/use-toast';
 
-interface LLMCallState {
-  isLoading: boolean;
-  error: string | null;
-  response: string | null;
+// Simple token/cost estimation
+const COSTS = {
+  'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 }, // per 1K tokens
+  'gpt-4': { input: 0.03, output: 0.06 },
+};
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
-export const useLLMCall = () => {
+export default function PromptEngineeringPage() {
   const { toast } = useToast();
-  const [state, setState] = useState<LLMCallState>({
-    isLoading: false,
-    error: null,
-    response: null,
-  });
-  
-  // Prevent duplicate requests
+  const [prompt, setPrompt] = useState('');
+  const [response, setResponse] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [tokens, setTokens] = useState({ input: 0, output: 0 });
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const sendPrompt = async (prompt: string) => {
-    if (!prompt.trim()) return;
+  // Handle Cmd/Ctrl + Enter
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !isLoading) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [prompt, isLoading]);
+
+  const handleSubmit = async () => {
+    if (!prompt.trim() || isLoading) return;
     
     // Cancel any existing request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     
-    // Create new abort controller
     abortControllerRef.current = new AbortController();
-    
-    setState({ isLoading: true, error: null, response: null });
+    setIsLoading(true);
+    setResponse('');
+    const inputTokens = estimateTokens(prompt);
+    setTokens({ input: inputTokens, output: 0 });
     
     try {
       const res = await fetch('/api/llm', {
@@ -201,75 +203,62 @@ export const useLLMCall = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt }),
         signal: abortControllerRef.current.signal,
-        // Longer timeout for LLM calls
-        timeout: 60000, // 60 seconds
       });
       
-      const data = await res.json();
-      
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to get response');
+        throw new Error('Failed to get response');
       }
       
-      setState({ isLoading: false, error: null, response: data.response });
+      // Get token info from headers
+      const promptTokens = parseInt(res.headers.get('X-Prompt-Tokens') || '0');
+      
+      // Handle streaming response
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = '';
+      
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        fullResponse += chunk;
+        setResponse(fullResponse);
+        
+        // Update output token count
+        setTokens({
+          input: promptTokens,
+          output: estimateTokens(fullResponse)
+        });
+      }
       
       toast({
         title: "Success",
-        description: "Prompt processed successfully",
+        description: `Response generated (${estimateTokens(fullResponse)} tokens)`,
       });
       
-    } catch (error) {
-      // Don't show error for aborted requests
+    } catch (error: any) {
       if (error.name === 'AbortError') return;
-      
-      const errorMessage = error.message || 'Failed to process prompt';
-      setState({ isLoading: false, error: errorMessage, response: null });
       
       toast({
         title: "Error",
-        description: errorMessage,
+        description: error.message || 'Failed to process prompt',
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
-  };
-  
-  const reset = () => {
-    setState({ isLoading: false, error: null, response: null });
-  };
-
-  return {
-    ...state,
-    sendPrompt,
-    reset,
-  };
-};
-```
-
-#### 2.3 Create Minimal Prompt Tool
-Create `src/app/(authenticated)/prompt-engineering/page.tsx`:
-```typescript
-'use client';
-
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { useLLMCall } from '@/hooks/useLLMCall';
-
-export default function PromptEngineeringPage() {
-  const [prompt, setPrompt] = useState('');
-  const { isLoading, response, sendPrompt, reset } = useLLMCall();
-
-  const handleSubmit = () => {
-    sendPrompt(prompt);
   };
 
   const handleClear = () => {
     setPrompt('');
-    reset();
+    setResponse('');
+    setTokens({ input: 0, output: 0 });
   };
+
+  const estimatedCost = 
+    (tokens.input * COSTS['gpt-3.5-turbo'].input / 1000) +
+    (tokens.output * COSTS['gpt-3.5-turbo'].output / 1000);
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -278,56 +267,50 @@ export default function PromptEngineeringPage() {
       <div className="space-y-4">
         <div>
           <label htmlFor="prompt" className="block text-sm font-medium mb-2">
-            Enter your prompt:
+            Prompt (Cmd/Ctrl + Enter to submit)
           </label>
           <Textarea
             id="prompt"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Enter your prompt here..."
-            className="min-h-32"
+            className="min-h-32 font-mono"
+            disabled={isLoading}
           />
         </div>
         
-        <div className="flex gap-2">
-          <Button 
-            onClick={handleSubmit} 
-            disabled={!prompt.trim() || isLoading}
-            className="flex-1"
-          >
-            {isLoading ? 'Generating...' : 'Send to LLM'}
-          </Button>
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            <Button 
+              onClick={handleSubmit} 
+              disabled={!prompt.trim() || isLoading}
+            >
+              {isLoading ? 'Generating...' : 'Send'}
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              onClick={handleClear}
+              disabled={isLoading}
+            >
+              Clear
+            </Button>
+          </div>
           
-          <Button 
-            variant="outline" 
-            onClick={handleClear}
-            disabled={isLoading}
-          >
-            Clear
-          </Button>
+          <div className="text-sm text-gray-500">
+            Tokens: {tokens.input} + {tokens.output} = {tokens.input + tokens.output}
+            {' '}(~${estimatedCost.toFixed(4)})
+          </div>
         </div>
         
-        <Separator />
-        
-        {isLoading && (
+        {(response || isLoading) && (
           <div>
             <label className="block text-sm font-medium mb-2">Response:</label>
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-4/5" />
-              <Skeleton className="h-4 w-3/4" />
-            </div>
-          </div>
-        )}
-        
-        {response && (
-          <div>
-            <label className="block text-sm font-medium mb-2">Response:</label>
-            <ScrollArea className="h-64 w-full rounded-md border bg-gray-50">
-              <pre className="whitespace-pre-wrap p-4 text-sm">
-                {response}
+            <div className="bg-gray-50 rounded-md border p-4 min-h-32 max-h-96 overflow-y-auto">
+              <pre className="whitespace-pre-wrap font-mono text-sm">
+                {response || (isLoading && '▊')}
               </pre>
-            </ScrollArea>
+            </div>
           </div>
         )}
       </div>
@@ -336,416 +319,513 @@ export default function PromptEngineeringPage() {
 }
 ```
 
-#### 2.4 Test the Basic Implementation
-1. Start your dev server: `pnpm dev`
+### Step 1.4: Test Phase 1
+1. Start dev server: `pnpm dev`
 2. Navigate to `/prompt-engineering`
-3. Enter a simple prompt like "Say hello"
-4. Click "Send to LLM"
-5. **Expected**: You should see a response appear below
-6. Test the "Clear" button to reset everything
+3. Try a simple prompt: "What is 2+2?"
+4. Test Cmd/Ctrl + Enter shortcut
+5. Verify streaming response and token counting
 
-**If it doesn't work**: Check the browser console for errors and verify your API key is set correctly.
+## Phase 2: Essential Features
 
-**Benefits of this approach**:
-- **No caching**: Each LLM call is fresh (appropriate for unique prompts)
-- **Request cancellation**: Previous requests are cancelled when new ones start
-- **Single error source**: Only toast notifications, no duplicate error displays
-- **LLM-optimized**: Longer timeout, no automatic retries (cost-conscious)
-
-### Step 3: Add Variable Templating
-
-#### 3.1 Add More Components
+### Step 2.1: Add More Components
 ```bash
-pnpm dlx shadcn@latest add input
-pnpm dlx shadcn@latest add label
-pnpm dlx shadcn@latest add skeleton
-pnpm dlx shadcn@latest add separator
+pnpm dlx shadcn@latest add input label card
+pnpm dlx shadcn@latest add scroll-area separator
 ```
 
-#### 3.2 Add Template Processing
-Update your page to include template processing:
+### Step 2.2: Add Prompt History
 
+Create `src/types/prompt.ts`:
 ```typescript
-// Add this function to your component
+export interface PromptHistoryItem {
+  id: string;
+  prompt: string;
+  processedPrompt: string;
+  variables: Record<string, string>;
+  response: string;
+  model: string;
+  tokens: { input: number; output: number };
+  cost: number;
+  timestamp: Date;
+}
+
+export interface SavedPrompt {
+  id: string;
+  name: string;
+  template: string;
+  defaultVariables: Record<string, string>;
+  category?: string;
+}
+```
+
+### Step 2.3: Add Variable Support and History
+
+Create `src/hooks/usePromptHistory.ts`:
+```typescript
+import { useState, useEffect } from 'react';
+import { PromptHistoryItem } from '@/types/prompt';
+
+const HISTORY_KEY = 'prompt-engineering-history';
+const MAX_HISTORY = 50;
+
+export function usePromptHistory() {
+  const [history, setHistory] = useState<PromptHistoryItem[]>([]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(HISTORY_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Convert date strings back to Date objects
+      parsed.forEach((item: any) => {
+        item.timestamp = new Date(item.timestamp);
+      });
+      setHistory(parsed);
+    }
+  }, []);
+
+  const addToHistory = (item: Omit<PromptHistoryItem, 'id'>) => {
+    const newItem: PromptHistoryItem = {
+      ...item,
+      id: Date.now().toString(),
+    };
+    
+    setHistory(prev => {
+      const updated = [newItem, ...prev].slice(0, MAX_HISTORY);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+      return updated;
+    });
+    
+    return newItem;
+  };
+
+  const clearHistory = () => {
+    setHistory([]);
+    localStorage.removeItem(HISTORY_KEY);
+  };
+
+  return { history, addToHistory, clearHistory };
+}
+```
+
+### Step 2.4: Update Main Component with Variables
+
+Create enhanced version with variable support:
+```typescript
+// Add these utility functions
 const extractVariables = (text: string): string[] => {
-  const matches = text.match(/\{([^}]+)\}/g);
-  return matches ? matches.map(match => match.slice(1, -1)) : [];
+  const matches = text.match(/\{\{([^}]+)\}\}/g);
+  return matches ? 
+    [...new Set(matches.map(match => match.slice(2, -2)))] : 
+    [];
 };
 
 const processTemplate = (template: string, vars: Record<string, string>): string => {
   let processed = template;
   Object.entries(vars).forEach(([key, value]) => {
-    processed = processed.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+    processed = processed.replace(
+      new RegExp(`\\{\\{${key}\\}\\}`, 'g'), 
+      value
+    );
   });
   return processed;
 };
 
-// Add this state
+// Update your component to include:
 const [variables, setVariables] = useState<Record<string, string>>({});
+const { history, addToHistory } = usePromptHistory();
+const [showHistory, setShowHistory] = useState(false);
 
-// Update your JSX to include variable inputs
-const templateVariables = extractVariables(prompt);
-
-// Add this after the textarea
-{templateVariables.length > 0 && (
-  <div className="space-y-2">
-    <label className="block text-sm font-medium">Variables:</label>
-    {templateVariables.map((variable) => (
-      <div key={variable}>
-        <Label htmlFor={variable}>{variable}</Label>
-        <Input
-          id={variable}
-          placeholder={`Enter value for ${variable}`}
-          value={variables[variable] || ''}
-          onChange={(e) => 
-            setVariables(prev => ({ ...prev, [variable]: e.target.value }))
-          }
-        />
-      </div>
-    ))}
-  </div>
-)}
-
-// Update handleSubmit to use processTemplate
-const handleSubmit = () => {
-  const finalPrompt = processTemplate(prompt, variables);
-  sendPrompt(finalPrompt);
-};
-```
-
-#### 3.3 Test Variable Templating
-1. Enter a template like: `"Write a {LENGTH} story about {TOPIC}"`
-2. **Expected**: Two input fields should appear for LENGTH and TOPIC
-3. Fill them in and submit
-4. **Expected**: The variables should be replaced in the final prompt
-
-### Step 4: Add Response Extraction
-
-#### 4.1 Add Tabs and Enhancement Components
-```bash
-pnpm dlx shadcn@latest add tabs
-pnpm dlx shadcn@latest add toast
-pnpm dlx shadcn@latest add scroll-area
-```
-
-#### 4.2 Add Extraction Logic
-Add an extractor regex input and tab-based response display:
-
-```typescript
-// Add this state
-const [extractorRegex, setExtractorRegex] = useState('');
-
-// Add this function
-const extractAnswer = (text: string, regex: string): string | null => {
-  if (!regex) return null;
-  try {
-    const match = text.match(new RegExp(regex, 'i'));
-    return match ? match[1] || match[0] : null;
-  } catch {
-    return null;
-  }
-};
-
-// Add regex input to your JSX
-<div>
-  <Label htmlFor="regex">Answer Extractor (Optional Regex)</Label>
-  <Input
-    id="regex"
-    placeholder="e.g., Answer: (.+)"
-    value={extractorRegex}
-    onChange={(e) => setExtractorRegex(e.target.value)}
-  />
-</div>
-
-// Replace the response display with tabs
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-
-const extractedAnswer = response ? extractAnswer(response, extractorRegex) : null;
-
-{response && (
-  <Tabs defaultValue="raw" className="w-full">
-    <TabsList className="grid w-full grid-cols-2">
-      <TabsTrigger value="raw">Raw Response</TabsTrigger>
-      <TabsTrigger value="extracted" disabled={!extractedAnswer}>
-        Extracted Answer
-      </TabsTrigger>
-    </TabsList>
-    
-    <TabsContent value="raw" className="mt-4">
-      <ScrollArea className="h-64 w-full rounded-md border bg-gray-50">
-        <pre className="whitespace-pre-wrap p-4 text-sm">
-          {response}
-        </pre>
-      </ScrollArea>
-    </TabsContent>
-    
-    <TabsContent value="extracted" className="mt-4">
-      {extractedAnswer ? (
-        <div className="bg-blue-50 p-4 rounded-md border">
-          <strong>Extracted Answer:</strong>
-          <p className="mt-2">{extractedAnswer}</p>
-        </div>
-      ) : (
-        <p className="text-gray-500">No answer extracted</p>
-      )}
-    </TabsContent>
-  </Tabs>
-)}
-```
-
-#### 4.3 Test Response Extraction
-1. Use a prompt like: `"What is 2+2? Answer: [your answer]"`
-2. Add regex: `Answer: (.+)`
-3. **Expected**: The extracted answer tab should show just the answer
-
-### Step 5: Add Polish and Persistence
-
-#### 5.1 Add Remaining Components
-```bash
-pnpm dlx shadcn@latest add card
-pnpm dlx shadcn@latest add select
-pnpm dlx shadcn@latest add badge
-pnpm add lucide-react
-```
-
-#### 5.2 Add Features Incrementally
-Now you can add features one by one:
-
-1. **Model Selection**: Add a select dropdown for different models
-2. **Persistence**: Add localStorage to save/restore state
-3. **Clear Function**: Add a button to clear all inputs
-4. **Better Error Handling**: Improve error messages
-5. **Loading States**: Add spinners and better loading feedback
-
-#### 5.3 Optional: Enhance the Custom Hook
-You can enhance the custom hook with additional features:
-
-```typescript
-// Enhanced version of useLLMCall with model selection
-import { useState, useRef } from 'react';
-import { useToast } from '@/components/ui/use-toast';
-
-interface LLMCallOptions {
-  model?: string;
-  temperature?: number;
-}
-
-export const useLLMCall = () => {
-  const { toast } = useToast();
-  const [state, setState] = useState<LLMCallState>({
-    isLoading: false,
-    error: null,
-    response: null,
+// Extract variables when prompt changes
+useEffect(() => {
+  const vars = extractVariables(prompt);
+  setVariables(prev => {
+    const newVars: Record<string, string> = {};
+    vars.forEach(v => {
+      newVars[v] = prev[v] || '';
+    });
+    return newVars;
   });
-  
-  const abortControllerRef = useRef<AbortController | null>(null);
+}, [prompt]);
 
-  const sendPrompt = async (prompt: string, options?: LLMCallOptions) => {
-    if (!prompt.trim()) return;
+// Add variable inputs UI
+const templateVariables = extractVariables(prompt);
+{templateVariables.length > 0 && (
+  <Card className="p-4">
+    <h3 className="font-medium mb-2">Variables:</h3>
+    <div className="space-y-2">
+      {templateVariables.map((variable) => (
+        <div key={variable} className="grid grid-cols-3 gap-2 items-center">
+          <Label htmlFor={variable} className="text-right">
+            {variable}:
+          </Label>
+          <Input
+            id={variable}
+            className="col-span-2"
+            placeholder={`Enter ${variable}`}
+            value={variables[variable] || ''}
+            onChange={(e) => 
+              setVariables(prev => ({ ...prev, [variable]: e.target.value }))
+            }
+          />
+        </div>
+      ))}
+    </div>
+  </Card>
+)}
+```
+
+## Phase 3: Power Features
+
+### Step 3.1: Add Response Format Handling
+
+```bash
+pnpm dlx shadcn@latest add tabs select badge
+pnpm add react-markdown remark-gfm
+```
+
+### Step 3.2: Create Enhanced API Route
+
+Update `src/app/api/llm/route.ts` to support different models and response formats:
+```typescript
+import { openai } from '@ai-sdk/openai';
+import { streamText, generateText } from 'ai';
+import { NextRequest } from 'next/server';
+
+export const runtime = 'edge';
+
+const MODELS = {
+  'gpt-3.5-turbo': openai('gpt-3.5-turbo'),
+  'gpt-4': openai('gpt-4'),
+  'gpt-4-turbo': openai('gpt-4-turbo-preview'),
+};
+
+export async function POST(request: NextRequest) {
+  try {
+    const { 
+      prompt, 
+      model = 'gpt-3.5-turbo',
+      temperature = 0.7,
+      stream = true,
+      responseFormat
+    } = await request.json();
     
-    // Cancel any existing request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    if (!prompt || typeof prompt !== 'string') {
+      return new Response('Invalid prompt', { status: 400 });
     }
     
-    abortControllerRef.current = new AbortController();
-    setState({ isLoading: true, error: null, response: null });
+    const selectedModel = MODELS[model as keyof typeof MODELS] || MODELS['gpt-3.5-turbo'];
+    const promptTokens = Math.ceil(prompt.length / 4);
+    
+    // For JSON responses, use generateText instead of streamText
+    if (responseFormat === 'json') {
+      const result = await generateText({
+        model: selectedModel,
+        prompt: prompt + '\n\nRespond with valid JSON only.',
+        temperature,
+      });
+      
+      return new Response(JSON.stringify({
+        response: result.text,
+        tokens: { input: promptTokens, output: Math.ceil(result.text.length / 4) },
+        model,
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    
+    // Stream for regular text
+    const result = await streamText({
+      model: selectedModel,
+      prompt,
+      temperature,
+    });
+    
+    return result.toAIStreamResponse({
+      headers: {
+        'X-Prompt-Tokens': promptTokens.toString(),
+        'X-Model': model,
+      }
+    });
+  } catch (error) {
+    console.error('LLM API error:', error);
+    return new Response('Failed to process request', { status: 500 });
+  }
+}
+```
+
+### Step 3.3: Add Response Extraction
+
+Create `src/components/ResponseViewer.tsx`:
+```typescript
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+interface ResponseViewerProps {
+  response: string;
+  extractorPattern?: string;
+  extractorType?: 'regex' | 'jsonpath' | 'llm';
+}
+
+export function ResponseViewer({ 
+  response, 
+  extractorPattern, 
+  extractorType = 'regex' 
+}: ResponseViewerProps) {
+  
+  const extractContent = () => {
+    if (!extractorPattern) return null;
     
     try {
-      const res = await fetch('/api/llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          prompt, 
-          model: options?.model || 'gpt-3.5-turbo',
-          temperature: options?.temperature || 0.7,
-        }),
-        signal: abortControllerRef.current.signal,
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to get response');
+      switch (extractorType) {
+        case 'regex':
+          const match = response.match(new RegExp(extractorPattern, 'i'));
+          return match ? match[1] || match[0] : null;
+          
+        case 'jsonpath':
+          // Simple JSON extraction
+          try {
+            const json = JSON.parse(response);
+            // Basic path like "result.answer"
+            const path = extractorPattern.split('.');
+            let value = json;
+            for (const key of path) {
+              value = value[key];
+            }
+            return value?.toString() || null;
+          } catch {
+            return null;
+          }
+          
+        default:
+          return null;
       }
-      
-      setState({ isLoading: false, error: null, response: data.response });
-      
-      toast({
-        title: "Success",
-        description: "Prompt processed successfully",
-      });
-      
-    } catch (error) {
-      if (error.name === 'AbortError') return;
-      
-      const errorMessage = error.message || 'Failed to process prompt';
-      setState({ isLoading: false, error: errorMessage, response: null });
-      
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
+    } catch {
+      return null;
     }
   };
   
-  return { ...state, sendPrompt, reset };
+  const extracted = extractContent();
+  const isJSON = response.trim().startsWith('{') || response.trim().startsWith('[');
+  
+  return (
+    <Tabs defaultValue="formatted" className="w-full">
+      <TabsList>
+        <TabsTrigger value="formatted">Formatted</TabsTrigger>
+        <TabsTrigger value="raw">Raw</TabsTrigger>
+        {extracted && <TabsTrigger value="extracted">Extracted</TabsTrigger>}
+      </TabsList>
+      
+      <TabsContent value="formatted" className="mt-4">
+        <div className="bg-gray-50 rounded-md border p-4 max-h-96 overflow-y-auto">
+          {isJSON ? (
+            <pre className="text-sm">
+              {JSON.stringify(JSON.parse(response), null, 2)}
+            </pre>
+          ) : (
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              className="prose prose-sm max-w-none"
+            >
+              {response}
+            </ReactMarkdown>
+          )}
+        </div>
+      </TabsContent>
+      
+      <TabsContent value="raw" className="mt-4">
+        <div className="bg-gray-50 rounded-md border p-4 max-h-96 overflow-y-auto">
+          <pre className="whitespace-pre-wrap font-mono text-sm">
+            {response}
+          </pre>
+        </div>
+      </TabsContent>
+      
+      {extracted && (
+        <TabsContent value="extracted" className="mt-4">
+          <div className="bg-blue-50 rounded-md border border-blue-200 p-4">
+            <div className="font-medium text-blue-900 mb-2">Extracted Content:</div>
+            <div className="text-blue-800">{extracted}</div>
+          </div>
+        </TabsContent>
+      )}
+    </Tabs>
+  );
+}
+```
+
+### Step 3.4: Add Prompt Comparison
+
+Create `src/components/PromptComparison.tsx`:
+```typescript
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+
+interface ComparisonProps {
+  basePrompt: string;
+  onCompare: (prompts: string[]) => void;
+}
+
+export function PromptComparison({ basePrompt, onCompare }: ComparisonProps) {
+  const [variants, setVariants] = useState<string[]>([basePrompt]);
+  
+  const addVariant = () => {
+    setVariants([...variants, basePrompt]);
+  };
+  
+  const updateVariant = (index: number, value: string) => {
+    const updated = [...variants];
+    updated[index] = value;
+    setVariants(updated);
+  };
+  
+  const runComparison = () => {
+    onCompare(variants);
+  };
+  
+  return (
+    <Card className="p-4">
+      <h3 className="font-medium mb-4">A/B Test Prompts</h3>
+      <div className="space-y-2">
+        {variants.map((variant, index) => (
+          <textarea
+            key={index}
+            value={variant}
+            onChange={(e) => updateVariant(index, e.target.value)}
+            className="w-full p-2 border rounded-md min-h-24"
+            placeholder={`Variant ${index + 1}`}
+          />
+        ))}
+      </div>
+      <div className="flex gap-2 mt-4">
+        <Button onClick={addVariant} variant="outline" size="sm">
+          Add Variant
+        </Button>
+        <Button onClick={runComparison} size="sm">
+          Compare All
+        </Button>
+      </div>
+    </Card>
+  );
+}
+```
+
+## Phase 4: Additional Enhancements
+
+### Prompt Library
+Store commonly used prompts in localStorage or database:
+```typescript
+const PROMPT_LIBRARY = [
+  {
+    name: "Summarize Text",
+    template: "Summarize the following text in {{WORDS}} words:\n\n{{TEXT}}",
+    category: "summarization"
+  },
+  {
+    name: "Extract JSON",
+    template: "Extract the following information from the text and return as JSON:\n{{FIELDS}}\n\nText: {{TEXT}}",
+    category: "extraction"
+  },
+  // Add more templates
+];
+```
+
+### Test Suite Functionality
+Run the same prompt with multiple test cases:
+```typescript
+interface TestCase {
+  name: string;
+  variables: Record<string, string>;
+  expectedPattern?: string;
+}
+
+const runTestSuite = async (
+  template: string, 
+  testCases: TestCase[]
+) => {
+  const results = await Promise.all(
+    testCases.map(async (testCase) => {
+      const prompt = processTemplate(template, testCase.variables);
+      // Run the prompt and check against expected pattern
+      return { testCase, result: await callLLM(prompt) };
+    })
+  );
+  return results;
 };
 ```
 
-#### 5.4 Test Each Feature
-Test each feature individually before moving to the next.
-
-### Step 6: Refactor to Clean Architecture (Optional)
-
-Once everything is working, you can optionally refactor into the clean component architecture shown in the previous sections. But only do this after you have a working implementation.
+### Prompt Chaining
+Use output from one prompt as input to another:
+```typescript
+const chainPrompts = async (chains: Array<{
+  template: string;
+  variables?: Record<string, string>;
+  outputVariable: string;
+}>) => {
+  let context: Record<string, string> = {};
+  
+  for (const chain of chains) {
+    const vars = { ...context, ...chain.variables };
+    const prompt = processTemplate(chain.template, vars);
+    const result = await callLLM(prompt);
+    context[chain.outputVariable] = result;
+  }
+  
+  return context;
+};
+```
 
 ## Troubleshooting Guide
 
-### Common Issues and Solutions
+### Common Issues
 
-#### API Route Problems
-- **"OpenAI API key not found"**: Ensure your `.env` file is in the project root and the key is correct
-- **CORS errors**: Make sure you're calling the API from the same domain (localhost:3000)
-- **Network timeout**: Check your internet connection and OpenAI service status
+1. **Streaming not working**: 
+   - Ensure you're using `export const runtime = 'edge'` in your API route
+   - Check that your response handling properly reads the stream
 
-#### Component Issues
-- **shadcn components not working**: Run `npx shadcn-ui@latest init` to set up shadcn if not already done
-- **Import errors**: Ensure all required dependencies are installed with `pnpm install`
-- **Styling issues**: Check that Tailwind CSS is properly configured
+2. **Token counting inaccurate**:
+   - The `/4` estimation is rough; consider using `tiktoken` for accurate counts
+   - Different models have different tokenization
 
-#### Authentication Problems
-- **Can't access `/prompt-engineering`**: Ensure you're signed in and the route is under `(authenticated)/`
-- **Redirect loops**: Check your middleware configuration and Clerk setup
+3. **Variable syntax conflicts**:
+   - If `{{VAR}}` conflicts with your prompts, use `<|VAR|>` or `[[VAR]]`
 
-#### Custom Hook Issues
-- **Hook not working**: Ensure the custom hook is properly imported and used
-- **Toast notifications not appearing**: Check that `<Toaster />` is added to your layout
-- **Request cancellation**: Previous requests should be cancelled automatically
-- **Timeout errors**: LLM calls have a 60-second timeout, increase if needed
+4. **Cost calculations wrong**:
+   - Update the COSTS object when OpenAI changes pricing
+   - Consider adding a settings page for custom pricing
 
-### Development Tips
+5. **History not persisting**:
+   - Check localStorage limits (usually 5-10MB)
+   - Implement cleanup of old history items
 
-1. **Start Simple**: Get the basic API call working before adding complexity
-2. **Test Incrementally**: After each step, verify the feature works before moving on
-3. **Use Browser DevTools**: Check the Network tab for API call issues
-4. **Check Console**: Look for JavaScript errors that might break functionality
-5. **Environment Variables**: Restart your dev server after changing environment variables
+## Security Considerations
 
-### Performance Considerations
+1. **API Key Security**:
+   - Never expose your API key in client-side code
+   - Use environment variables and server-side API routes
+   - Consider implementing rate limiting
 
-- **API Rate Limits**: OpenAI has rate limits; don't make too many requests quickly
-- **Large Responses**: Consider truncating very long responses in the UI
-- **localStorage**: Be mindful of localStorage size limits (usually 5-10MB)
+2. **Input Validation**:
+   - Sanitize user inputs before sending to LLM
+   - Implement prompt size limits
+   - Validate JSON responses before parsing
 
-### Optional: Clean Architecture Refactoring
+3. **Cost Control**:
+   - Add spending limits
+   - Track usage per session
+   - Implement user-level quotas if sharing
 
-If you want to refactor to the clean component architecture after everything is working, you can split your single-page component into:
+## Next Steps
 
-1. **Container Component**: Manages state and API calls
-2. **Editor Component**: Handles prompt input and templating
-3. **Viewer Component**: Displays responses and extraction
-4. **Navigation**: Add links to your authenticated layout
+1. **Enhance the UI**: Add syntax highlighting for code in responses
+2. **Add Export Options**: Save prompts and responses to files
+3. **Implement Sharing**: Share prompts with unique URLs
+4. **Add Analytics**: Track which prompts work best
+5. **Build Prompt Templates**: Create a library of proven prompts
+6. **Add Evaluation Metrics**: Automatically score responses
+7. **Implement Caching**: Cache identical prompts (with TTL)
+8. **Add Batch Processing**: Process multiple inputs in parallel
 
-But remember: **Only refactor after you have a working implementation**. The goal is to get something working quickly, then improve it iteratively.
-
-## Usage Guide
-
-### Basic Workflow
-
-1. **Create a Template**: Enter your prompt in the template field using `{VARIABLE_NAME}` syntax
-2. **Fill Variables**: Input values for any variables you defined
-3. **Optional Regex**: Add a regex pattern to extract specific answers
-4. **Send to LLM**: Click the button to process your prompt
-5. **Review Response**: Check both raw and extracted responses
-6. **Iterate**: Modify your template and re-run quickly
-
-### Example Templates
-
-#### Simple Question
-```
-Answer the following question: {QUESTION}
-```
-
-#### Summarization
-```
-Summarize the following text in {WORD_COUNT} words:
-
-{TEXT}
-```
-
-#### Classification with Format
-```
-Classify the following text as positive, negative, or neutral:
-
-Text: {TEXT}
-
-Answer: [Your classification]
-```
-
-#### Few-Shot Example
-```
-Classify customer feedback sentiment:
-
-Example 1: "Great product!" -> Positive
-Example 2: "Terrible service" -> Negative
-Example 3: "It's okay" -> Neutral
-
-Now classify: {FEEDBACK}
-Answer: 
-```
-
-## What You Can Skip Initially
-
-- **Dataset Management**: Focus on single inputs
-- **Advanced Metrics**: Manual review is sufficient
-- **Complex Exemplar Selection**: Manually add examples
-- **Automated Prompt Engineering**: Keep it manual for learning
-- **Version Control**: Simple copy-paste for now
-
-## Improvements Over Basic Implementation
-
-This updated plan addresses several issues from the initial approach:
-
-- **Custom Hook Pattern**: Clean separation of API logic from UI components
-- **Request Cancellation**: Automatic cancellation of previous requests to prevent conflicts
-- **LLM-Optimized**: Longer timeouts, no caching, single error source
-- **Cost-Conscious**: No automatic retries to prevent unexpected API charges
-- **Better UX**: Loading states, clear functionality, and toast notifications
-- **Simplified State**: No duplicate error handling or complex state management
-- **Input Validation**: Validates templates and regex patterns before submission
-- **Enhanced API Route**: Better error handling and input validation
-- **Component Architecture**: Clean separation of concerns for better maintainability
-
-## Why Not React Query for This Use Case
-
-While React Query is excellent for many scenarios, it's not optimal for LLM interactions because:
-
-- **No Caching Needed**: Each LLM response is unique and shouldn't be cached
-- **No Background Refetch**: LLM calls are expensive and intentional
-- **No Optimistic Updates**: Can't predict LLM responses
-- **Cost Sensitivity**: Need explicit control over when API calls happen
-- **Simple Use Case**: Basic request/response pattern doesn't need complex state management
-
-## Next Steps for Enhancement
-
-1. **Prompt History**: Save and reload previous prompts using localStorage or database
-2. **Model Selection**: Support different OpenAI models with enhanced custom hook
-3. **Batch Processing**: Handle multiple inputs with Promise.all or sequential processing
-4. **Export Results**: Save responses to files (JSON, CSV, etc.)
-5. **Prompt Library**: Common templates collection with local storage or database
-6. **A/B Testing**: Compare different prompt versions with side-by-side requests
-7. **Streaming Responses**: Implement real-time streaming for better UX
-8. **Cost Tracking**: Monitor API usage and costs per prompt
-9. **Request Queuing**: Handle rate limits with proper queuing system
-10. **Prompt Validation**: Add validation for prompt structure and variables
-
-## Security Notes
-
-- Keep your OpenAI API key secure in environment variables
-- Consider rate limiting for API calls
-- Monitor your API usage and costs
-- Use authentication (already set up with Clerk)
-
-This plan provides a solid foundation for your prompt engineering tool while keeping it simple and focused on the core iterative workflow.
+This improved plan provides a more focused, phased approach that gets you to a useful tool quickly while building in essential features like streaming, history, and cost tracking from the start.
